@@ -8,7 +8,7 @@ end-parameters
 
 declarations
   NUMNODES: set of real
-  NCONTING: set of real
+  NSCENAR: set of real
   NUMLINES: set of real
 
   PMIN:     array(NUMNODES) of real
@@ -19,16 +19,18 @@ declarations
   NODEJ:    array(NUMLINES) of real
   X:        array(NUMLINES) of real
   FMAXIJ:   array(NUMLINES) of real
-  FMAX:     array(NUMNODES, NUMNODES) of real
-
-  !Availability Matrix for SCOPF
-  A:        array(NCONTING,NCONTING) of real
-  !Matrix of admittance
   B:        array(NUMNODES,NUMNODES) of real
 
+  ! FMAX:     array(NUMNODES, NUMNODES) of real
+
+  !Availability Matrix for SCOPF
+  AM:        array(NUMNODES,NSCENAR) of real
+  !Matrix of admittance
+  BM:        array(NUMLINES,NSCENAR) of real
+
   !Variables
-  P:        array(NUMNODES) of mpvar
-  Theta:    array(NUMNODES) of mpvar
+  P:        array(NUMNODES, NSCENAR) of mpvar
+  Theta:    array(NUMNODES, NSCENAR) of mpvar
   !Objective
   Objective: linctr
 
@@ -38,7 +40,7 @@ end-declarations
 initialisations from 'mmsheet.xlsx:'+'data.xlsm'
   NUMNODES
   NUMLINES
-  NCONTING
+  NSCENAR
   PMAX as     "skiph;noindex;PMAX"
   PMIN as     "skiph;noindex;PMIN"
   CV as       "skiph;noindex;COST"
@@ -47,31 +49,40 @@ initialisations from 'mmsheet.xlsx:'+'data.xlsm'
   NODEJ as    "skiph;noindex;NODEJ"
   X as        "skiph;noindex;X"
   FMAXIJ as   "skiph;noindex;FMAXIJ"
-  A as        "skiph;noindex;A"
+  AM as        "skiph;noindex;AM"
+  BM as        "skiph;noindex;BM"
+
 end-initialisations
 
-! procedure readBMatrix
-!   forall(i in NUMLINES) do
-!     ni := NODEI(i)
-!     nj := NODEJ(i)
-!     yij := 1/X(i)
-!     B(ni,nj) := yij
-!     B(nj,ni) := yij
-!   end-do
-! end-procedure
+writeln(getsize(AM))
+writeln(getsize(BM))
+writeln(AM)
+writeln(BM)
+writeln(FMAXIJ)
 
-! procedure createBMatrix
-!   forall(i in NUMNODES) do
-!     B(i,i) := sum(j in NUMNODES)B(i,j)
-!   end-do
-!   forall(i in NUMNODES) do
-!     forall(j in NUMNODES) do
-!       if(i<>j) then
-!         B(i,j) := -B(i,j)
-!       end-if
-!     end-do
-!   end-do
-! end-procedure
+procedure readBMatrix
+  forall(i in NUMLINES) do
+    ni := NODEI(i)
+    nj := NODEJ(i)
+    yij := 1/X(i)
+    B(ni,nj) := yij
+    B(nj,ni) := yij
+  end-do
+end-procedure
+
+
+procedure createBMatrix
+  forall(i in NUMNODES) do
+    B(i,i) := sum(j in NUMNODES)B(i,j)
+  end-do
+  forall(i in NUMNODES) do
+    forall(j in NUMNODES) do
+      if(i<>j) then
+        B(i,j) := -B(i,j)
+      end-if
+    end-do
+  end-do
+end-procedure
 
 ! !Routine for FMAX
 ! procedure createFMAX
@@ -84,54 +95,88 @@ end-initialisations
 !   end-do
 ! end-procedure
 
-
-
-
-! !Creating B Matrix
-! readBMatrix
-! createBMatrix
+!Creating B Matrix
+readBMatrix
+createBMatrix
 ! createFMAX
 
 
-! !Objetive function
-! Objective :=sum(i in NUMNODES)(CV(i)*P(i))
 
-! !Limits of generators
-! forall(i in NUMNODES) do
-!   PMIN(i) <= P(i)
-!   PMAX(i) >= P(i)
-! end-do
+! -------------------------------------------------------------------------------
+! -------------------------------------------------------------------------------
 
-! !Balancing of power
-! forall(i in NUMNODES) do
-!   sum(j in NUMNODES) B(i,j)*Theta(j) = P(i) - D(i)
-! end-do
+!Objetive function
+Objective :=sum(i in NUMNODES)(CV(i)*P(i,0)) !Optimize the base case: without any fault
 
-! !Flow Limits
+!Limits of generators for each scenario
+forall(s in NSCENAR) do
+  forall(i in NUMNODES) do
+    AM(i,s)*PMIN(i) <= P(i,s)
+    AM(i,s)*PMAX(i) >= P(i,s)
+  end-do
+end-do
+
+!Balancing of power
+forall(s in NSCENAR) do
+  forall(i in NUMNODES) do
+    sum(j in NUMNODES) B(i,j)*(Theta(j,s)) = P(i,s)*AM(i,s) - D(i)
+  end-do
+end-do
+
+
+!Flow Limits
 ! forall(i in NUMNODES) do
-!   forall(j in NUMNODES) do
+!   forall(j in ) do
 !     if(i<>j) then
-!       B(i,j)*(Theta(i)-Theta(j)) <= FMAX(i,j)
+!       B(i,j)*(Theta(i,s)-Theta(j,s)) <= FMAX(i,j) + M(1-B(i,s))
 !     end-if
 !   end-do
 ! end-do
 
-! !Definition of variables theta and power
-! forall(i in NUMNODES) do
-!   P(i) is_free
-!   Theta(i) is_free
-! end-do
+forall(s in NSCENAR)do
+  forall(l in NUMLINES) do
+      ni := NODEI(l)
+      nj := NODEJ(l)
+      ! B(ni,nj)*(Theta(ni,s)-Theta(nj,s)) <= FMAX(ni,nj)*B(l,s)
+      ! B(nj,ni)*(Theta(nj,s)-Theta(ni,s)) <= FMAX(nj,ni)*B(l,s)
 
-! minimise(Objective)
-! writeln("------Results: ------")
+      ! B(ni,nj)*(Theta(ni,s)-Theta(nj,s)) >= -1*FMAX(ni,nj)*B(l,s)
+      ! B(nj,ni)*(Theta(ni,s)-Theta(nj,s)) >= -1*FMAX(nj,ni)*B(l,s)
+      B(ni,nj)*(Theta(ni,s)-Theta(nj,s)) <= FMAXIJ(l)*BM(l,s)
+      B(nj,ni)*(Theta(nj,s)-Theta(ni,s)) <= FMAXIJ(l)*BM(l,s)
 
-! !Print Results
-! forall(i in NUMNODES) do
-!   writeln("P(",i,") = ",getsol(P(i)))
-! end-do
+      B(ni,nj)*(Theta(ni,s)-Theta(nj,s)) >= -1*FMAXIJ(l)*BM(l,s)
+      B(nj,ni)*(Theta(ni,s)-Theta(nj,s)) >= -1*FMAXIJ(l)*BM(l,s)
+  end-do
+end-do
 
-! forall(i in NUMNODES) do
-!   writeln("Theta(",i,") = ",getsol(Theta(i)))
-! end-do
+
+!Definition of variables theta and power
+forall(s in NSCENAR) do
+  forall(i in NUMNODES) do
+    P(i,s) is_free
+    Theta(i,s) is_free
+  end-do
+end-do
+
+
+
+
+
+! -------------------------------------------------------------------------------
+! -------------------------------------------------------------------------------
+minimise(Objective)
+writeln("------Results: ------")
+
+writeln("Total Cost of Operation: ", getobjval)
+
+!Print Results
+forall(i in NUMNODES) do
+  writeln("P(",i,") = ",getsol(P(i,0)))
+end-do
+
+forall(i in NUMNODES) do
+  writeln("Theta(",i,") = ",getsol(Theta(i,0)))
+end-do
 
 end-model

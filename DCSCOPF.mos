@@ -48,11 +48,6 @@ initialisations from 'mmsheet.xlsx:'+'data.xlsm'
 
 end-initialisations
 
-writeln(getsize(AM))
-writeln(getsize(BM))
-writeln(AM)
-writeln(BM)
-writeln(FMAXIJ)
 
 procedure readBMatrix
   forall(i in NUMLINES) do
@@ -121,11 +116,9 @@ end-do
 !Definition of variables theta and power
 forall(s in NSCENAR) do
   forall(i in NUMNODES) do
-    P(i,s) is_free
     Theta(i,s) is_free
   end-do
 end-do
-
 
 
 ! -------------------------------------------------------------------------------

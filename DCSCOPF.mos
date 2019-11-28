@@ -2,10 +2,6 @@ model DCSCOPF
 uses "mmxprs","mmsheet","mmetc","mmjobs","mmsystem"
 
 
-parameters
-	M = 10000
-end-parameters
-
 declarations
   NUMNODES: set of real
   NSCENAR: set of real
@@ -20,8 +16,6 @@ declarations
   X:        array(NUMLINES) of real
   FMAXIJ:   array(NUMLINES) of real
   B:        array(NUMNODES,NUMNODES) of real
-
-  ! FMAX:     array(NUMNODES, NUMNODES) of real
 
   !Availability Matrix for SCOPF
   AM:        array(NUMNODES,NSCENAR) of real
@@ -84,22 +78,8 @@ procedure createBMatrix
   end-do
 end-procedure
 
-! !Routine for FMAX
-! procedure createFMAX
-!   forall(i in NUMLINES) do
-!     ni := NODEI(i)
-!     nj := NODEJ(i)
-!     fmaxij := FMAXIJ(i)
-!     FMAX(ni,nj) := fmaxij
-!     FMAX(nj,ni) := fmaxij
-!   end-do
-! end-procedure
-
-!Creating B Matrix
 readBMatrix
 createBMatrix
-! createFMAX
-
 
 
 ! -------------------------------------------------------------------------------
@@ -124,24 +104,11 @@ forall(s in NSCENAR) do
 end-do
 
 
-!Flow Limits
-! forall(i in NUMNODES) do
-!   forall(j in ) do
-!     if(i<>j) then
-!       B(i,j)*(Theta(i,s)-Theta(j,s)) <= FMAX(i,j) + M(1-B(i,s))
-!     end-if
-!   end-do
-! end-do
-
 forall(s in NSCENAR)do
   forall(l in NUMLINES) do
       ni := NODEI(l)
       nj := NODEJ(l)
-      ! B(ni,nj)*(Theta(ni,s)-Theta(nj,s)) <= FMAX(ni,nj)*B(l,s)
-      ! B(nj,ni)*(Theta(nj,s)-Theta(ni,s)) <= FMAX(nj,ni)*B(l,s)
 
-      ! B(ni,nj)*(Theta(ni,s)-Theta(nj,s)) >= -1*FMAX(ni,nj)*B(l,s)
-      ! B(nj,ni)*(Theta(ni,s)-Theta(nj,s)) >= -1*FMAX(nj,ni)*B(l,s)
       B(ni,nj)*(Theta(ni,s)-Theta(nj,s)) <= FMAXIJ(l)*BM(l,s)
       B(nj,ni)*(Theta(nj,s)-Theta(ni,s)) <= FMAXIJ(l)*BM(l,s)
 
@@ -158,8 +125,6 @@ forall(s in NSCENAR) do
     Theta(i,s) is_free
   end-do
 end-do
-
-
 
 
 

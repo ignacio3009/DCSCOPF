@@ -4,8 +4,8 @@ uses "mmxprs","mmsheet","mmetc","mmjobs","mmsystem"
 
 declarations
   NUMNODES: set of real
-  NSCENAR: set of real
   NUMLINES: set of real
+  NUMSCEN: set of real
 
   PMIN:     array(NUMNODES) of real
   PMAX:     array(NUMNODES) of real
@@ -15,16 +15,21 @@ declarations
   NODEJ:    array(NUMLINES) of real
   X:        array(NUMLINES) of real
   FMAXIJ:   array(NUMLINES) of real
+  RAMP_UP:  array(NUMNODES) of real
+  RAMP_DOWN:array(NUMNODES) of real
   B:        array(NUMNODES,NUMNODES) of real
 
   !Availability Matrix for SCOPF
-  AM:        array(NUMNODES,NSCENAR) of real
+  AM:       array(NUMNODES,NUMSCEN) of real
   !Matrix of admittance
-  BM:        array(NUMLINES,NSCENAR) of real
+  BM:       array(NUMLINES,NUMSCEN) of real
 
   !Variables
-  P:        array(NUMNODES, NSCENAR) of mpvar
-  Theta:    array(NUMNODES, NSCENAR) of mpvar
+  P:        array(NUMNODES, NUMSCEN) of mpvar
+  Theta:    array(NUMNODES, NUMSCEN) of mpvar
+  Rup:      array(NUMNODES) of mpvar
+  Rdown:    array(NUMNODES) of mpvar
+
   !Objective
   Objective: linctr
 
@@ -34,17 +39,19 @@ end-declarations
 initialisations from 'mmsheet.xlsx:'+'data.xlsm'
   NUMNODES
   NUMLINES
-  NSCENAR
-  PMAX as     "skiph;noindex;PMAX"
-  PMIN as     "skiph;noindex;PMIN"
-  CV as       "skiph;noindex;COST"
-  D as        "skiph;noindex;D"
-  NODEI as    "skiph;noindex;NODEI"
-  NODEJ as    "skiph;noindex;NODEJ"
-  X as        "skiph;noindex;X"
-  FMAXIJ as   "skiph;noindex;FMAXIJ"
-  AM as        "skiph;noindex;AM"
-  BM as        "skiph;noindex;BM"
+  NUMSCEN
+  PMAX       as     "skiph;noindex;PMAX"
+  PMIN       as     "skiph;noindex;PMIN"
+  CV         as     "skiph;noindex;COST"
+  D          as     "skiph;noindex;D"
+  NODEI      as     "skiph;noindex;NODEI"
+  NODEJ      as     "skiph;noindex;NODEJ"
+  X          as     "skiph;noindex;X"
+  FMAXIJ     as     "skiph;noindex;FMAXIJ"
+  AM         as     "skiph;noindex;AM"
+  BM         as     "skiph;noindex;BM"
+  RAMP_UP    as     "skiph;noindex;RAMP_UP"
+  RAMP_DOWN  as     "skiph;noindex;RAMP_DOWN"
 
 end-initialisations
 
@@ -83,23 +90,33 @@ createBMatrix
 !Objetive function
 Objective :=sum(i in NUMNODES)(CV(i)*P(i,0)) !Optimize the base case: without any fault
 
+
+!Limits of Reserves UP and Down
+forall(i in NUMNODES) do
+  Rup(i)  <=  RAMP_UP(i)
+  Rdown(i)  <=  RAMP_DOWN(i)
+  P(i,0) + Rup(i) <=  PMAX(i)
+  P(i,0) - Rdown(i) >=  PMIN(i)
+end-do
+
+
 !Limits of generators for each scenario
-forall(s in NSCENAR) do
+forall(s in NUMSCEN) do
   forall(i in NUMNODES) do
-    AM(i,s)*PMIN(i) <= P(i,s)
-    AM(i,s)*PMAX(i) >= P(i,s)
+    P(i,s) <= AM(i,s)*(P(i,0) + Rup(i))
+    P(i,s) >= AM(i,s)*(P(i,0) - Rdown(i))
   end-do
 end-do
 
 !Balancing of power
-forall(s in NSCENAR) do
+forall(s in NUMSCEN) do
   forall(i in NUMNODES) do
     sum(j in NUMNODES) B(i,j)*(Theta(j,s)) = P(i,s)*AM(i,s) - D(i)
   end-do
 end-do
 
 
-forall(s in NSCENAR)do
+forall(s in NUMSCEN)do
   forall(l in NUMLINES) do
       ni := NODEI(l)
       nj := NODEJ(l)
@@ -114,7 +131,7 @@ end-do
 
 
 !Definition of variables theta and power
-forall(s in NSCENAR) do
+forall(s in NUMSCEN) do
   forall(i in NUMNODES) do
     Theta(i,s) is_free
   end-do
@@ -136,5 +153,6 @@ end-do
 forall(i in NUMNODES) do
   writeln("Theta(",i,") = ",getsol(Theta(i,0)))
 end-do
+
 
 end-model

@@ -1,6 +1,9 @@
 model DCSCOPF
 uses "mmxprs","mmsheet","mmetc","mmjobs","mmsystem"
 
+parameters
+  M=100000
+end-parameters
 
 declarations
   NUMNODES: set of real
@@ -83,6 +86,25 @@ end-procedure
 readBMatrix
 createBMatrix
 
+function getBM(i: real, j: real, s: real): real
+
+  forall(k in NUMLINES)do
+    ni:= NODEI(k)
+    nj:= NODEJ(k)
+    if((ni=i and nj=j) or (ni=j and nj=i))then
+        index:=NUMLINES(k)
+        break
+    end-if
+  end-do
+
+  if(index <>0) then
+      returned:=BM(index,s)
+  else
+    returned:=1
+  end-if
+
+end-function
+
 
 ! -------------------------------------------------------------------------------
 ! -------------------------------------------------------------------------------
@@ -111,7 +133,7 @@ end-do
 !Balancing of power
 forall(s in NUMSCEN) do
   forall(i in NUMNODES) do
-    sum(j in NUMNODES) B(i,j)*(Theta(j,s)) = P(i,s)*AM(i,s) - D(i)
+    sum(j in NUMNODES) B(i,j)*(Theta(i,s)-Theta(j,s))*getBM(i,j,s) = P(i,s)*AM(i,s) - D(i)
   end-do
 end-do
 
@@ -121,11 +143,11 @@ forall(s in NUMSCEN)do
       ni := NODEI(l)
       nj := NODEJ(l)
 
-      B(ni,nj)*(Theta(ni,s)-Theta(nj,s)) <= FMAXIJ(l)*BM(l,s)
-      B(nj,ni)*(Theta(nj,s)-Theta(ni,s)) <= FMAXIJ(l)*BM(l,s)
+      B(ni,nj)*(Theta(ni,s)-Theta(nj,s)) <= FMAXIJ(l)*BM(l,s) + M*(1-BM(l,s))
+      B(nj,ni)*(Theta(nj,s)-Theta(ni,s)) <= FMAXIJ(l)*BM(l,s) + M*(1-BM(l,s))
 
-      B(ni,nj)*(Theta(ni,s)-Theta(nj,s)) >= -1*FMAXIJ(l)*BM(l,s)
-      B(nj,ni)*(Theta(ni,s)-Theta(nj,s)) >= -1*FMAXIJ(l)*BM(l,s)
+      B(ni,nj)*(Theta(ni,s)-Theta(nj,s)) >= -1*FMAXIJ(l)*BM(l,s) - M*(1-BM(l,s))
+      B(nj,ni)*(Theta(nj,s)-Theta(ni,s)) >= -1*FMAXIJ(l)*BM(l,s) - M*(1-BM(l,s))
   end-do
 end-do
 

@@ -1,8 +1,8 @@
 model DCSCOPF
-uses "mmxprs","mmsheet","mmetc","mmjobs","mmsystem"
+uses "mmxprs","mmsheet"
 
 parameters
-  M=10000
+  M=100000
 end-parameters
 
 declarations
@@ -21,6 +21,7 @@ declarations
   RAMP_UP:  array(NUMNODES) of real
   RAMP_DOWN:array(NUMNODES) of real
   B:        array(NUMNODES,NUMNODES) of real
+  CR:       array(NUMNODES) of real
 
   !Availability Matrix for SCOPF
   AM:       array(NUMNODES,NUMSCEN) of real
@@ -77,38 +78,80 @@ end-procedure
 
 procedure createBMatrix
   forall(i in NUMNODES) do
-    B(i,i) := sum(j in NUMNODES)B(i,j)
+    B(i,i) := sum(j in NUMNODES)(B(i,j))
   end-do
   forall(i in NUMNODES) do
     forall(j in NUMNODES) do
-      if(i<>j) then
+      ! if(i<>j) then
+      !   B(i,j) := -B(i,j)
+      if(i=j) then
         B(i,j) := -B(i,j)
       end-if
     end-do
   end-do
 end-procedure
 
+!!Create B Matrix of the system
 readBMatrix
 createBMatrix
 
-function getBM(i: real, j: real, s: real): real
+! writeln("B Matrix")
+! forall(i in NUMNODES) do
+!   forall(j in NUMNODES)do
+!       write(B(i,j),",")
+!   end-do
+!   writeln(" ")
+! end-do
+! writeln("BM")
+! forall(i in NUMLINES) do
+!   forall(s in NUMSCEN) do
+!     write(BM(i,s)," , ")
+!   end-do
+!   writeln(" ")
+! end-do
 
+! writeln("AM")
+! forall(i in NUMNODES) do
+!   forall(s in NUMSCEN) do
+!     write(AM(i,s)," , ")
+!   end-do
+!   writeln(" ")
+! end-do
+
+! writeln("PMAX")
+! writeln(PMAX)
+
+!Takes node i and node j and returns
+! 1: if line between node i and node j is active
+! 0: if line between node i and node j is not active
+function getBM(i: real, j: real, s: real): real
+  index:=0.0
   forall(k in NUMLINES)do
     ni:= NODEI(k)
     nj:= NODEJ(k)
-    if((ni=i and nj=j) or (ni=j and nj=i))then
-        index:=NUMLINES(k)
-        break
+    if((ni=i and nj=j) or (ni=j and nj=i)) then
+          index:=k
+          break
     end-if
   end-do
 
-  if(index <>0) then
+  if(index <>0.0) then
       returned:=BM(index,s)
   else
-    returned:=1
+    returned:=1.0
   end-if
-
 end-function
+
+
+! writeln("getBM")
+! forall(s in NUMSCEN) do
+!   forall(i in NUMNODES) do
+!       forall(j in NUMNODES) do
+!       write(getBM(i,j,s)," , ")
+!     end-do
+!   end-do
+!   writeln(" ")
+! end-do
 
 
 function getTransferSol(k: real, s:real): real
@@ -116,71 +159,59 @@ function getTransferSol(k: real, s:real): real
   nj:= NODEJ(k)
   theta_i:= getsol(Theta(ni,s))
   theta_j:= getsol(Theta(nj,s))
-  returned:= B(ni,nj)*(theta_i - theta_j)
+  returned:= B(ni,nj)*(theta_i - theta_j)*getBM(ni,nj,s)
 end-function
 
 
 
-
+CR ::[10,10,10]
 ! -------------------------------------------------------------------------------
 ! -------------------------------------------------------------------------------
 
 !Objetive function
-Objective :=sum(i in NUMNODES)(CV(i)*P(i,0)) !Optimize the base case: without any fault
+Objective :=sum(i in NUMNODES)(CV(i)*P(i,0) + CR(i)*(Rup(i)+Rdown(i)))
 
 
 !Limits of Reserves UP and Down
 forall(i in NUMNODES) do
+  x(i) is_binary
+  P(i,0) + Rup(i) <=  PMAX(i)*x(i)
+  P(i,0) - Rdown(i) >=  PMIN(i)*x(i)
   Rup(i)  <=  RAMP_UP(i)
   Rdown(i)  <=  RAMP_DOWN(i)
-  P(i,0) + Rup(i) <=  PMAX(i)
-  P(i,0) - Rdown(i) >=  PMIN(i)
 end-do
 
 
-!Limits of generators for each scenario
 forall(s in NUMSCEN) do
+
+  !Balancing of power
+  forall(i in NUMNODES) do
+        sum(j in NUMNODES) (getBM(i,j,s)*B(i,j)*(Theta(i,s)-Theta(j,s))) = P(i,s) - D(i)
+  end-do
+
+
+  !Limits of reserves
   forall(i in NUMNODES) do
     P(i,s) <= AM(i,s)*(P(i,0) + Rup(i))
     P(i,s) >= AM(i,s)*(P(i,0) - Rdown(i))
   end-do
-end-do
-
-!Balancing of power
-forall(s in NUMSCEN) do
-  forall(i in NUMNODES) do
-    sum(j in NUMNODES) B(i,j)*(Theta(i,s)-Theta(j,s)) = P(i,s)*AM(i,s) - D(i)
-  end-do
-end-do
 
 
-forall(s in NUMSCEN)do
+  !Limits of power flow in lines
   forall(l in NUMLINES) do
       ni := NODEI(l)
       nj := NODEJ(l)
 
-      B(ni,nj)*(Theta(ni,s)-Theta(nj,s)) <= FMAXIJ(l)*BM(l,s) + M*(1-BM(l,s))
-      B(nj,ni)*(Theta(nj,s)-Theta(ni,s)) <= FMAXIJ(l)*BM(l,s) + M*(1-BM(l,s))
-
+      B(ni,nj)*(Theta(ni,s)-Theta(nj,s)) <=  FMAXIJ(l)*BM(l,s) + M*(1-BM(l,s))
       B(ni,nj)*(Theta(ni,s)-Theta(nj,s)) >= -FMAXIJ(l)*BM(l,s) - M*(1-BM(l,s))
-      B(nj,ni)*(Theta(nj,s)-Theta(ni,s)) >= -FMAXIJ(l)*BM(l,s) - M*(1-BM(l,s))
   end-do
-end-do
 
-
-!Definition of variables theta
-forall(s in NUMSCEN) do
+  !Define Theta angles as free variable
   forall(i in NUMNODES) do
     Theta(i,s) is_free
   end-do
+
 end-do
-
-!Definition of variables x Unit Commitment
-! forall(i in NUMNODES)do
-!   x(i) is_binary
-! end-do
-
-
 
 ! -------------------------------------------------------------------------------
 ! -------------------------------------------------------------------------------
@@ -200,6 +231,18 @@ forall(i in NUMNODES) do
 end-do
 
 
+forall(i in NUMNODES) do
+  writeln("Rup(",i,") = ",getsol(Rup(i)))
+end-do
+
+forall(i in NUMNODES) do
+  writeln("Rdown(",i,") = ",getsol(Rdown(i)))
+end-do
+
+writeln("Escenario 6")
+writeln(getBM(1,2,6))
+
+
 ! -------------------------------------------------------------------------------
 ! -------------------------------------------------------------------------------
 !!Save solutions
@@ -211,6 +254,7 @@ forall(s in NUMSCEN)do
   forall(i in NUMLINES) do
     L_SOL(i,s) := getTransferSol(i,s)
   end-do
+
 end-do
 
 OBJ_SOL:=getobjval

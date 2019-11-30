@@ -2,7 +2,7 @@ model DCSCOPF
 uses "mmxprs","mmsheet","mmetc","mmjobs","mmsystem"
 
 parameters
-  M=100000
+  M=10000
 end-parameters
 
 declarations
@@ -32,6 +32,11 @@ declarations
   Theta:    array(NUMNODES, NUMSCEN) of mpvar
   Rup:      array(NUMNODES) of mpvar
   Rdown:    array(NUMNODES) of mpvar
+  x:        array(NUMNODES) of mpvar
+
+  !Solutions
+  P_SOL:    array(NUMNODES, NUMSCEN) of real
+  L_SOL:    array(NUMLINES, NUMSCEN) of real
 
   !Objective
   Objective: linctr
@@ -106,6 +111,17 @@ function getBM(i: real, j: real, s: real): real
 end-function
 
 
+function getTransferSol(k: real, s:real): real
+  ni:= NODEI(k)
+  nj:= NODEJ(k)
+  theta_i:= getsol(Theta(ni,s))
+  theta_j:= getsol(Theta(nj,s))
+  returned:= B(ni,nj)*(theta_i - theta_j)
+end-function
+
+
+
+
 ! -------------------------------------------------------------------------------
 ! -------------------------------------------------------------------------------
 
@@ -133,7 +149,7 @@ end-do
 !Balancing of power
 forall(s in NUMSCEN) do
   forall(i in NUMNODES) do
-    sum(j in NUMNODES) B(i,j)*(Theta(i,s)-Theta(j,s))*getBM(i,j,s) = P(i,s)*AM(i,s) - D(i)
+    sum(j in NUMNODES) B(i,j)*(Theta(i,s)-Theta(j,s)) = P(i,s)*AM(i,s) - D(i)
   end-do
 end-do
 
@@ -146,22 +162,29 @@ forall(s in NUMSCEN)do
       B(ni,nj)*(Theta(ni,s)-Theta(nj,s)) <= FMAXIJ(l)*BM(l,s) + M*(1-BM(l,s))
       B(nj,ni)*(Theta(nj,s)-Theta(ni,s)) <= FMAXIJ(l)*BM(l,s) + M*(1-BM(l,s))
 
-      B(ni,nj)*(Theta(ni,s)-Theta(nj,s)) >= -1*FMAXIJ(l)*BM(l,s) - M*(1-BM(l,s))
-      B(nj,ni)*(Theta(nj,s)-Theta(ni,s)) >= -1*FMAXIJ(l)*BM(l,s) - M*(1-BM(l,s))
+      B(ni,nj)*(Theta(ni,s)-Theta(nj,s)) >= -FMAXIJ(l)*BM(l,s) - M*(1-BM(l,s))
+      B(nj,ni)*(Theta(nj,s)-Theta(ni,s)) >= -FMAXIJ(l)*BM(l,s) - M*(1-BM(l,s))
   end-do
 end-do
 
 
-!Definition of variables theta and power
+!Definition of variables theta
 forall(s in NUMSCEN) do
   forall(i in NUMNODES) do
     Theta(i,s) is_free
   end-do
 end-do
 
+!Definition of variables x Unit Commitment
+! forall(i in NUMNODES)do
+!   x(i) is_binary
+! end-do
+
+
 
 ! -------------------------------------------------------------------------------
 ! -------------------------------------------------------------------------------
+!!Print Results
 minimise(Objective)
 writeln("------Results: ------")
 
@@ -175,6 +198,28 @@ end-do
 forall(i in NUMNODES) do
   writeln("Theta(",i,") = ",getsol(Theta(i,0)))
 end-do
+
+
+! -------------------------------------------------------------------------------
+! -------------------------------------------------------------------------------
+!!Save solutions
+forall(s in NUMSCEN)do
+  forall(i in NUMNODES) do
+    P_SOL(i,s) := getsol(P(i,s))
+  end-do
+
+  forall(i in NUMLINES) do
+    L_SOL(i,s) := getTransferSol(i,s)
+  end-do
+end-do
+
+OBJ_SOL:=getobjval
+
+initialisations to 'mmsheet.excel:'+'data.xlsm'
+	OBJ_SOL 	as "skiph;grow;noindex;COSTSOL"
+  P_SOL 		as "skiph;grow;noindex;PSOL"
+	L_SOL 		as "skiph;grow;noindex;LSOL"
+end-initialisations
 
 
 end-model
